@@ -1,7 +1,7 @@
 const express = require('express');
 const jsonServer = require('json-server');
 const jwt = require("jsonwebtoken");
-require("dotenv").config();
+
 
 const server = jsonServer.create();
 const router = jsonServer.router('db.json');  

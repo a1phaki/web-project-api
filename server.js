@@ -133,7 +133,7 @@ function authenticateToken(req, res, next) {
 }
 
 // 取得預約資料
-app.get("/appointment", authenticateToken, async (req, res) => {
+app.get("/appointments", authenticateToken, async (req, res) => {
   try {
     const appointmentCol = collection(db, 'appointments');
     const querySnapshot = await getDocs(appointmentCol);
@@ -152,7 +152,7 @@ app.get("/appointment", authenticateToken, async (req, res) => {
 });
 
 // POST 預約資料
-app.post("/appointment", authenticateToken, async (req, res) => {
+app.post("/appointments", authenticateToken, async (req, res) => {
   const { date, timeSlot, bodyPart, nailRemoval, nailExtension, name, birthday, email, phone, LineID } = req.body;
 
   if (!date || !timeSlot || !bodyPart || !name || !email || !phone || !LineID || !nailRemoval || !birthday || !nailExtension) {

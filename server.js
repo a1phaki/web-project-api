@@ -1,9 +1,11 @@
 require('dotenv').config();
+const cors = require('cors');
 const express = require('express');
 const jwt = require('jwt-simple');
 const { initializeApp } = require('firebase/app');
 const { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, updateDoc } = require('firebase/firestore');
 
+app.use(cors());
 const app = express();
 const port = process.env.PORT || 3500;
 

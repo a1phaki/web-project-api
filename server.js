@@ -198,12 +198,37 @@ app.post("/appointment", authenticateToken, async (req, res) => {
   }
 });
 
-// 取得 scheduleConfig 資料
+// 受保護的 API - 會員資料
+app.get("/members", authenticateToken, async (req, res) => {
+  try {
+    if (req.user.user === "admin") {
+      const membersCol = collection(db, "members");
+      const querySnapshot = await getDocs(membersCol);
+
+      const members = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      return res.json(members);
+    }
+
+    return res.status(403).json({ message: "您沒有權限查看其他會員資料" });
+  } catch (err) {
+    res.status(500).json({ message: "伺服器錯誤", error: err });
+  }
+});
+
+// 取得 scheduleConfig 資料 (所有使用者皆可)
 app.get("/scheduleConfig", authenticateToken, async (req, res) => {
   try {
-    const scheduleConfigCol = collection(db, 'scheduleConfig');
+    const scheduleConfigCol = collection(db, "scheduleConfig");
     const querySnapshot = await getDocs(scheduleConfigCol);
-    const scheduleConfig = querySnapshot.docs.map(doc => doc.data());
+
+    const scheduleConfig = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
 
     res.json(scheduleConfig);
   } catch (err) {
@@ -221,18 +246,25 @@ app.patch("/scheduleConfig/:id", authenticateToken, async (req, res) => {
     const scheduleDoc = await getDoc(scheduleRef);
 
     if (!scheduleDoc.exists()) {
-      return res.status(404).json({ message: "找不到行程配置" });
+      return res.status(404).json({ message: "無法找到對應的行程配置" });
     }
 
     const schedule = scheduleDoc.data();
 
+    // 管理員的操作：可以修改 unavailableTimeSlots 和 lastBookableDate
     if (req.user.user === "admin") {
-      if (unavailableTimeSlots) schedule.unavailableTimeSlots = unavailableTimeSlots;
-      if (lastBookableDate) schedule.lastBookableDate = lastBookableDate;
-    } else if (req.user.user === "user" && reservedTimeSlots) {
-      schedule.reservedTimeSlots = reservedTimeSlots;
+      if (unavailableTimeSlots !== undefined) schedule.unavailableTimeSlots = unavailableTimeSlots;
+      if (lastBookableDate !== undefined) schedule.lastBookableDate = lastBookableDate;
+    } 
+    // 一般使用者的操作：只能修改 reservedTimeSlots
+    else if (req.user.user === "user") {
+      if (reservedTimeSlots !== undefined) {
+        schedule.reservedTimeSlots = reservedTimeSlots;
+      } else if (!unavailableTimeSlots && !lastBookableDate) {
+        return res.status(400).json({ message: "沒有提供預約時間" });
+      }
     } else {
-      return res.status(403).json({ message: "沒有權限" });
+      return res.status(403).json({ message: "您沒有權限執行此操作" });
     }
 
     await updateDoc(scheduleRef, schedule);
@@ -245,6 +277,7 @@ app.patch("/scheduleConfig/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });
+
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);

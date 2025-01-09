@@ -5,8 +5,9 @@ const jwt = require('jwt-simple');
 const { initializeApp } = require('firebase/app');
 const { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, updateDoc } = require('firebase/firestore');
 
-app.use(cors());
+
 const app = express();
+app.use(cors());
 const port = process.env.PORT || 3500;
 
 // Firebase 配置

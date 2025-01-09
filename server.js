@@ -237,36 +237,42 @@ app.get("/scheduleConfig", authenticateToken, async (req, res) => {
 });
 
 // 更新 scheduleConfig 資料
-app.patch("/scheduleConfig/:id", authenticateToken, async (req, res) => {
-  const { id } = req.params;
+app.patch("/scheduleConfig", authenticateToken, async (req, res) => {
   const { unavailableTimeSlots, lastBookableDate, reservedTimeSlots } = req.body;
 
   try {
-    const scheduleRef = doc(db, "scheduleConfig", id);
-    const scheduleDoc = await getDoc(scheduleRef);
+    // 取得 scheduleConfig 集合
+    const scheduleConfigCol = collection(db, "scheduleConfig");
+    const querySnapshot = await getDocs(scheduleConfigCol);
 
-    if (!scheduleDoc.exists()) {
-      return res.status(404).json({ message: "無法找到對應的行程配置" });
+    if (querySnapshot.empty) {
+      return res.status(404).json({ message: "找不到行程配置" });
     }
 
+    // 假設永遠只有一個文檔，抓取第一個文檔
+    const scheduleDoc = querySnapshot.docs[0];
+    const scheduleRef = scheduleDoc.ref;
     const schedule = scheduleDoc.data();
+
+    console.log("原始行程配置：", schedule);
 
     // 管理員的操作：可以修改 unavailableTimeSlots 和 lastBookableDate
     if (req.user.user === "admin") {
       if (unavailableTimeSlots !== undefined) schedule.unavailableTimeSlots = unavailableTimeSlots;
       if (lastBookableDate !== undefined) schedule.lastBookableDate = lastBookableDate;
-    } 
+    }
     // 一般使用者的操作：只能修改 reservedTimeSlots
     else if (req.user.user === "user") {
       if (reservedTimeSlots !== undefined) {
         schedule.reservedTimeSlots = reservedTimeSlots;
-      } else if (!unavailableTimeSlots && !lastBookableDate) {
+      } else {
         return res.status(400).json({ message: "沒有提供預約時間" });
       }
     } else {
       return res.status(403).json({ message: "您沒有權限執行此操作" });
     }
 
+    // 更新文檔
     await updateDoc(scheduleRef, schedule);
 
     res.status(200).json({
@@ -274,6 +280,7 @@ app.patch("/scheduleConfig/:id", authenticateToken, async (req, res) => {
       schedule,
     });
   } catch (err) {
+    console.error("更新行程配置時發生錯誤：", err);
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });

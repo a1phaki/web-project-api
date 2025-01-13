@@ -26,6 +26,24 @@ const db = getFirestore(firebaseApp);
 
 app.use(express.json());
 
+// 驗證 Token 的中間件
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ message: "未提供身份驗證 Token" });
+  }
+
+  try {
+    const decoded = jwt.decode(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({ message: "無效或過期的身份驗證 Token" });
+  }
+}
+
 // 登入 API
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
@@ -114,42 +132,72 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// 驗證 Token 的中間件
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(" ")[1];
+// // 取得預約資料
+// app.get("/appointments", authenticateToken, async (req, res) => {
+//   try {
+//     const appointmentCol = collection(db, 'appointments');
+//     const querySnapshot = await getDocs(appointmentCol);
 
-  if (!token) {
-    return res.status(401).json({ message: "未提供身份驗證 Token" });
-  }
+//     const appointments = querySnapshot.docs.map(doc => doc.data());
 
-  try {
-    const decoded = jwt.decode(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    return res.status(403).json({ message: "無效或過期的身份驗證 Token" });
-  }
-}
+//     if (req.user.user === "admin") {
+//       return res.json(appointments);
+//     }
 
-// 取得預約資料
+//     const userAppointments = appointments.filter(appointment => appointment.email === req.user.email);
+//     res.json(userAppointments);
+//   } catch (err) {
+//     res.status(500).json({ message: "伺服器錯誤", error: err });
+//   }
+// });
+
 app.get("/appointments", authenticateToken, async (req, res) => {
   try {
+    const { page, limit } = req.query; // 提取 page 和 limit
     const appointmentCol = collection(db, 'appointments');
     const querySnapshot = await getDocs(appointmentCol);
 
+    // 取得所有預約資料
     const appointments = querySnapshot.docs.map(doc => doc.data());
 
+    // 排序資料：先根據 date（降序），再根據 timeSlot 的結束時間（升序）
+    const sortedAppointments = appointments.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+
+      if (dateA !== dateB) {
+        return dateB - dateA; // 日期降序
+      }
+
+      const endTimeA = a.timeSlot?.split("～")[1] || "";
+      const endTimeB = b.timeSlot?.split("～")[1] || "";
+
+      return endTimeA.localeCompare(endTimeB); // 時間升序
+    });
+
+    // 通用分頁函數
+    const paginate = (data, page, limit) => {
+      if (!page || !limit) return data; // 如果沒有分頁參數，返回全部資料
+      const startIndex = (parseInt(page) - 1) * parseInt(limit);
+      const endIndex = startIndex + parseInt(limit);
+      return data.slice(startIndex, endIndex);
+    };
+
+    // 如果是 admin，用戶可以看到所有預約資料
     if (req.user.user === "admin") {
-      return res.json(appointments);
+      const paginatedAppointments = paginate(sortedAppointments, page, limit);
+      return res.json(paginatedAppointments);
     }
 
-    const userAppointments = appointments.filter(appointment => appointment.email === req.user.email);
-    res.json(userAppointments);
+    // 如果是普通用戶，只返回該用戶的預約資料
+    const userAppointments = sortedAppointments.filter(appointment => appointment.email === req.user.email);
+    const paginatedAppointments = paginate(userAppointments, page, limit);
+    res.json(paginatedAppointments);
   } catch (err) {
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });
+
 
 // POST 預約資料
 app.post("/appointments", authenticateToken, async (req, res) => {

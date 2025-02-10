@@ -132,6 +132,11 @@ app.post("/register", async (req, res) => {
   }
 });
 
+// 確認是否已登入
+app.get("/login/check", authenticateToken, (req, res) => {
+  res.status(200).json({ login: true });
+});
+
 // // 取得預約資料
 // app.get("/appointments", authenticateToken, async (req, res) => {
 //   try {
@@ -150,6 +155,60 @@ app.post("/register", async (req, res) => {
 //     res.status(500).json({ message: "伺服器錯誤", error: err });
 //   }
 // });
+
+app.patch("/members/update", authenticateToken, async (req, res) => {
+  const { id, name, birthday, email, phone, LineID } = req.body;
+
+  if (!id) {
+    return res.status(400).json({ message: "缺少會員 ID" });
+  }
+
+  try {
+    const memberRef = doc(db, "members", id);
+    const memberSnap = await getDoc(memberRef);
+
+    if (!memberSnap.exists()) {
+      return res.status(404).json({ message: "會員不存在" });
+    }
+
+    const memberData = memberSnap.data();
+
+    // 限制非管理員只能修改自己的資料
+    if (req.user.user !== "admin" && req.user.email !== memberData.email) {
+      return res.status(403).json({ message: "您沒有權限修改此會員資料" });
+    }
+
+    let updateData = {};
+
+    if (name !== undefined) updateData.name = name;
+    if (birthday !== undefined) updateData.birthday = birthday;
+    if (phone !== undefined) updateData.phone = phone;
+    if (LineID !== undefined) updateData.LineID = LineID;
+
+    // 如果 email 要修改，需確保不與其他會員重複
+    if (email !== undefined && email !== memberData.email) {
+      const membersCol = collection(db, "members");
+      const q = query(membersCol, where("email", "==", email));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        return res.status(400).json({ message: "該電子郵件已被使用" });
+      }
+
+      updateData.email = email;
+    }
+
+    // 更新會員資料
+    await updateDoc(memberRef, updateData);
+
+    res.status(200).json({ message: "會員資料更新成功" });
+  } catch (err) {
+    console.error("更新會員資料時發生錯誤：", err);
+    res.status(500).json({ message: "伺服器錯誤", error: err });
+  }
+});
+
+
 
 app.get("/appointments", authenticateToken, async (req, res) => {
   try {

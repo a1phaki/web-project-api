@@ -132,13 +132,38 @@ app.post("/register", async (req, res) => {
   }
 });
 
-app.get("/login/check", authenticateToken, (req, res) => {
-  // 假設 req.user 是用戶資料，這部分需要在 authenticateToken 中設置
-  res.status(200).json({
-    login: true,
-    user: req.user // 返回用戶資料
-  });
+app.get("/login/check", authenticateToken, async (req, res) => {
+  try {
+    // 假設 req.user 是解碼後的用戶資料，包含 user.email 等
+    const membersCol = collection(db, 'members');
+    const q = query(membersCol, where("email", "==", req.user.email));
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      return res.status(404).json({ message: "用戶資料未找到" });
+    }
+
+    const user = querySnapshot.docs[0].data();
+
+    // 返回完整用戶資料
+    res.status(200).json({
+      login: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        birthday: user.birthday,
+        LineID: user.LineID,
+        user: user.user,
+      }
+    });
+  } catch (err) {
+    console.error("發生錯誤：", err);
+    res.status(500).json({ message: "伺服器錯誤", error: err.message });
+  }
 });
+
 
 // // 取得預約資料
 // app.get("/appointments", authenticateToken, async (req, res) => {

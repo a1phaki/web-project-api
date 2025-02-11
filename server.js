@@ -187,53 +187,57 @@ app.get("/login/check", authenticateToken, async (req, res) => {
 app.patch("/members/update", authenticateToken, async (req, res) => {
   const { id, name, birthday, email, phone, LineID } = req.body;
 
-  if (!id) {
-    return res.status(400).json({ message: "缺少會員 ID" });
+if (!id) {
+  return res.status(400).json({ message: "缺少會員 ID" });
+}
+
+try {
+  // 使用自訂欄位 `id` 來查詢 Firestore
+  const membersCol = collection(db, "members");
+  const q = query(membersCol, where("id", "==", id));  // 這裡的 `id` 是你自己存的欄位
+  const querySnapshot = await getDocs(q);
+
+  if (querySnapshot.empty) {
+    return res.status(404).json({ message: "會員不存在" });
   }
 
-  try {
-    const memberRef = doc(db, "members", id);
-    const memberSnap = await getDoc(memberRef);
+  // 取得第一筆匹配的會員資料
+  const memberDoc = querySnapshot.docs[0];
+  const memberRef = memberDoc.ref;
+  const memberData = memberDoc.data();
 
-    if (!memberSnap.exists()) {
-      return res.status(404).json({ message: "會員不存在" });
-    }
-
-    const memberData = memberSnap.data();
-
-    // 限制非管理員只能修改自己的資料
-    if (req.user.user !== "admin" && req.user.email !== memberData.email) {
-      return res.status(403).json({ message: "您沒有權限修改此會員資料" });
-    }
-
-    let updateData = {};
-
-    if (name !== undefined) updateData.name = name;
-    if (birthday !== undefined) updateData.birthday = birthday;
-    if (phone !== undefined) updateData.phone = phone;
-    if (LineID !== undefined) updateData.LineID = LineID;
-
-    // 如果 email 要修改，需確保不與其他會員重複
-    if (email !== undefined && email !== memberData.email) {
-      const membersCol = collection(db, "members");
-      const q = query(membersCol, where("email", "==", email));
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-        return res.status(400).json({ message: "該電子郵件已被使用" });
-      }
-
-      updateData.email = email;
-    }
-
-    // 更新會員資料
-    await updateDoc(memberRef, updateData);
-
-    res.status(200).json({ message: "會員資料更新成功" });
-  } catch (err) {
-    console.error("更新會員資料時發生錯誤：", err);
-    res.status(500).json({ message: "伺服器錯誤", error: err });
+  // 限制非管理員只能修改自己的資料
+  if (req.user.user !== "admin" && req.user.email !== memberData.email) {
+    return res.status(403).json({ message: "您沒有權限修改此會員資料" });
   }
+
+  let updateData = {};
+
+  if (name !== undefined) updateData.name = name;
+  if (birthday !== undefined) updateData.birthday = birthday;
+  if (phone !== undefined) updateData.phone = phone;
+  if (LineID !== undefined) updateData.LineID = LineID;
+
+  // 如果 email 要修改，需確保不與其他會員重複
+  if (email !== undefined && email !== memberData.email) {
+    const emailQuery = query(membersCol, where("email", "==", email));
+    const emailSnapshot = await getDocs(emailQuery);
+
+    if (!emailSnapshot.empty) {
+      return res.status(400).json({ message: "該電子郵件已被使用" });
+    }
+
+    updateData.email = email;
+  }
+
+  // 更新會員資料
+  await updateDoc(memberRef, updateData);
+
+  res.status(200).json({ message: "會員資料更新成功" });
+} catch (err) {
+  console.error("更新會員資料時發生錯誤：", err);
+  res.status(500).json({ message: "伺服器錯誤", error: err });
+}
 });
 
 

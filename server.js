@@ -132,9 +132,12 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// 確認是否已登入
 app.get("/login/check", authenticateToken, (req, res) => {
-  res.status(200).json({ login: true });
+  // 假設 req.user 是用戶資料，這部分需要在 authenticateToken 中設置
+  res.status(200).json({
+    login: true,
+    user: req.user // 返回用戶資料
+  });
 });
 
 // // 取得預約資料

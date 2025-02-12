@@ -27,12 +27,17 @@ const db = getFirestore(firebaseApp);
 app.use(express.json());
 
 // 驗證 Token 的中間件
+// 修改 Token 驗證邏輯，確保已登出的 Token 不能使用
 function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(" ")[1];
 
   if (!token) {
     return res.status(401).json({ message: "未提供身份驗證 Token" });
+  }
+
+  if (logoutTokens.has(token)) {
+    return res.status(403).json({ message: "Token 已失效，請重新登入" });
   }
 
   try {
@@ -162,6 +167,13 @@ app.get("/login/check", authenticateToken, async (req, res) => {
     console.error("發生錯誤：", err);
     res.status(500).json({ message: "伺服器錯誤", error: err.message });
   }
+});
+
+const logoutTokens = new Set(); // 存儲已登出的 Token
+
+app.post("/logout", authenticateToken, (req, res) => {
+  logoutTokens.add(req.headers.authorization.split(" ")[1]); // 將 Token 加入黑名單
+  res.json({ message: "登出成功" });
 });
 
 

@@ -36,10 +36,6 @@ function authenticateToken(req, res, next) {
     return res.status(401).json({ message: "未提供身份驗證 Token" });
   }
 
-  if (logoutTokens.has(token)) {
-    return res.status(403).json({ message: "Token 已失效，請重新登入" });
-  }
-
   try {
     const decoded = jwt.decode(token, process.env.JWT_SECRET);
     req.user = decoded;
@@ -169,12 +165,13 @@ app.get("/login/check", authenticateToken, async (req, res) => {
   }
 });
 
-const logoutTokens = new Set(); // 存儲已登出的 Token
 
-app.post("/logout", authenticateToken, (req, res) => {
-  logoutTokens.add(req.headers.authorization.split(" ")[1]); // 將 Token 加入黑名單
-  res.json({ message: "登出成功" });
+
+app.post("/logout", (req, res) => {
+  res.clearCookie("token", { path: "/" }); // 清除 token
+  res.status(200).json({ message: "登出成功" });
 });
+
 
 
 // // 取得預約資料

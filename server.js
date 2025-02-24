@@ -132,21 +132,23 @@ app.post("/register", async (req, res) => {
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });
-
+// 驗證用戶是否登入並返回用戶資料
 app.get("/login/check", authenticateToken, async (req, res) => {
   try {
     // 假設 req.user 是解碼後的用戶資料，包含 user.email 等
-    const membersCol = collection(db, 'members');
-    const q = query(membersCol, where("email", "==", req.user.email));
-    const querySnapshot = await getDocs(q);
+    const membersCol = collection(db, 'members');  // 指定 Firestore 資料集合
+    const q = query(membersCol, where("email", "==", req.user.email));  // 查詢 email 是否與當前用戶匹配
+    const querySnapshot = await getDocs(q);  // 執行查詢
 
+    // 如果查詢結果為空，表示找不到用戶資料
     if (querySnapshot.empty) {
-      return res.status(404).json({ message: "用戶資料未找到" });
+      return res.status(404).json({ message: "用戶資料未找到" });  // 返回 404 錯誤
     }
 
+    // 提取查詢結果的第一筆用戶資料
     const user = querySnapshot.docs[0].data();
 
-    // 返回完整用戶資料
+    // 返回用戶資料
     res.status(200).json({
       login: true,
       user: {
@@ -156,104 +158,89 @@ app.get("/login/check", authenticateToken, async (req, res) => {
         phone: user.phone,
         birthday: user.birthday,
         LineID: user.LineID,
-        user: user.user,
+        user: user.user,  // 可以包括其他需要的用戶資料
       }
     });
   } catch (err) {
+    // 發生錯誤時返回 500 錯誤
     console.error("發生錯誤：", err);
     res.status(500).json({ message: "伺服器錯誤", error: err.message });
   }
 });
 
-
-
+// 登出處理，清除 token
 app.post("/logout", (req, res) => {
-  res.clearCookie("token", { path: "/" }); // 清除 token
-  res.status(200).json({ message: "登出成功" });
+  // 清除存儲的 token，並設置有效路徑為根目錄 "/"
+  res.clearCookie("token", { path: "/" }); 
+  res.status(200).json({ message: "登出成功" });  // 返回登出成功訊息
 });
 
-
-
-// // 取得預約資料
-// app.get("/appointments", authenticateToken, async (req, res) => {
-//   try {
-//     const appointmentCol = collection(db, 'appointments');
-//     const querySnapshot = await getDocs(appointmentCol);
-
-//     const appointments = querySnapshot.docs.map(doc => doc.data());
-
-//     if (req.user.user === "admin") {
-//       return res.json(appointments);
-//     }
-
-//     const userAppointments = appointments.filter(appointment => appointment.email === req.user.email);
-//     res.json(userAppointments);
-//   } catch (err) {
-//     res.status(500).json({ message: "伺服器錯誤", error: err });
-//   }
-// });
-
+// 更新會員資料的 API
 app.patch("/members/update", authenticateToken, async (req, res) => {
   const { id, name, birthday, email, phone, LineID } = req.body;
 
-if (!id) {
-  return res.status(400).json({ message: "缺少會員 ID" });
-}
-
-try {
-  // 使用自訂欄位 `id` 來查詢 Firestore
-  const membersCol = collection(db, "members");
-  const q = query(membersCol, where("id", "==", id));  // 這裡的 `id` 是你自己存的欄位
-  const querySnapshot = await getDocs(q);
-
-  if (querySnapshot.empty) {
-    return res.status(404).json({ message: "會員不存在" });
+  // 檢查是否有提供會員 ID
+  if (!id) {
+    return res.status(400).json({ message: "缺少會員 ID" });  // 如果缺少會員 ID 返回 400 錯誤
   }
 
-  // 取得第一筆匹配的會員資料
-  const memberDoc = querySnapshot.docs[0];
-  const memberRef = memberDoc.ref;
-  const memberData = memberDoc.data();
+  try {
+    // 使用會員 ID 查詢 Firestore
+    const membersCol = collection(db, "members");
+    const q = query(membersCol, where("id", "==", id));  // 查詢條件為會員 ID
+    const querySnapshot = await getDocs(q);
 
-  // 限制非管理員只能修改自己的資料
-  if (req.user.user !== "admin" && req.user.email !== memberData.email) {
-    return res.status(403).json({ message: "您沒有權限修改此會員資料" });
-  }
-
-  let updateData = {};
-
-  if (name !== undefined) updateData.name = name;
-  if (birthday !== undefined) updateData.birthday = birthday;
-  if (phone !== undefined) updateData.phone = phone;
-  if (LineID !== undefined) updateData.LineID = LineID;
-
-  // 如果 email 要修改，需確保不與其他會員重複
-  if (email !== undefined && email !== memberData.email) {
-    const emailQuery = query(membersCol, where("email", "==", email));
-    const emailSnapshot = await getDocs(emailQuery);
-
-    if (!emailSnapshot.empty) {
-      return res.status(400).json({ message: "該電子郵件已被使用" });
+    // 如果查詢結果為空，表示該會員不存在
+    if (querySnapshot.empty) {
+      return res.status(404).json({ message: "會員不存在" });  // 返回 404 錯誤
     }
 
-    updateData.email = email;
+    // 取得該會員資料
+    const memberDoc = querySnapshot.docs[0];
+    const memberRef = memberDoc.ref;  // 獲取該會員文檔的參照
+    const memberData = memberDoc.data();  // 提取該會員的資料
+
+    // 限制非管理員只能修改自己的資料
+    if (req.user.user !== "admin" && req.user.email !== memberData.email) {
+      return res.status(403).json({ message: "您沒有權限修改此會員資料" });  // 如果非管理員且嘗試修改其他會員資料，返回 403 錯誤
+    }
+
+    let updateData = {};  // 用來儲存更新的資料
+
+    // 更新指定欄位的資料
+    if (name !== undefined) updateData.name = name;
+    if (birthday !== undefined) updateData.birthday = birthday;
+    if (phone !== undefined) updateData.phone = phone;
+    if (LineID !== undefined) updateData.LineID = LineID;
+
+    // 如果 email 要修改，需確保不與其他會員重複
+    if (email !== undefined && email !== memberData.email) {
+      const emailQuery = query(membersCol, where("email", "==", email));  // 查詢是否已經有其他會員使用該 email
+      const emailSnapshot = await getDocs(emailQuery);
+
+      if (!emailSnapshot.empty) {
+        return res.status(400).json({ message: "該電子郵件已被使用" });  // 如果 email 已被使用，返回 400 錯誤
+      }
+
+      updateData.email = email;  // 如果 email 沒有重複，更新 email
+    }
+
+    // 更新會員資料
+    await updateDoc(memberRef, updateData);  // 更新 Firestore 中的會員資料
+
+    res.status(200).json({ message: "會員資料更新成功" });  // 返回更新成功訊息
+  } catch (err) {
+    // 如果發生錯誤，返回 500 錯誤
+    res.status(500).json({ message: "伺服器錯誤", error: err });
   }
-
-  // 更新會員資料
-  await updateDoc(memberRef, updateData);
-
-  res.status(200).json({ message: "會員資料更新成功" });
-} catch (err) {
-  console.error("更新會員資料時發生錯誤：", err);
-  res.status(500).json({ message: "伺服器錯誤", error: err });
-}
 });
+
 
 
 
 app.get("/appointments", authenticateToken, async (req, res) => {
   try {
-    const { page, limit } = req.query; // 提取 page 和 limit
+    const { page, limit } = req.query;
     const appointmentCol = collection(db, 'appointments');
     const querySnapshot = await getDocs(appointmentCol);
 
@@ -275,24 +262,36 @@ app.get("/appointments", authenticateToken, async (req, res) => {
       return endTimeA.localeCompare(endTimeB); // 時間升序
     });
 
-    // 通用分頁函數
+    // 計算分頁資訊
     const paginate = (data, page, limit) => {
-      if (!page || !limit) return data; // 如果沒有分頁參數，返回全部資料
-      const startIndex = (parseInt(page) - 1) * parseInt(limit);
+      const totalItems = data.length;
+      const totalPages = limit ? Math.ceil(totalItems / parseInt(limit)) : 1;
+      const currentPage = page ? parseInt(page) : 1;
+
+      if (!page || !limit) {
+        return { paginatedData: data, pageInfo: { totalPages, currentPage, totalItems } };
+      }
+
+      const startIndex = (currentPage - 1) * parseInt(limit);
       const endIndex = startIndex + parseInt(limit);
-      return data.slice(startIndex, endIndex);
+      const paginatedData = data.slice(startIndex, endIndex);
+
+      return { paginatedData, pageInfo: { totalPages, currentPage, totalItems } };
     };
 
-    // 如果是 admin，用戶可以看到所有預約資料
-    if (req.user.user === "admin") {
-      const paginatedAppointments = paginate(sortedAppointments, page, limit);
-      return res.json(paginatedAppointments);
-    }
+    let filteredAppointments = sortedAppointments;
 
     // 如果是普通用戶，只返回該用戶的預約資料
-    const userAppointments = sortedAppointments.filter(appointment => appointment.email === req.user.email);
-    const paginatedAppointments = paginate(userAppointments, page, limit);
-    res.json(paginatedAppointments);
+    if (req.user.user !== "admin") {
+      filteredAppointments = sortedAppointments.filter(appointment => appointment.email === req.user.email);
+    }
+
+    const { paginatedData, pageInfo } = paginate(filteredAppointments, page, limit);
+
+    res.json({
+      appointments: paginatedData,
+      pageInfo,
+    });
   } catch (err) {
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }

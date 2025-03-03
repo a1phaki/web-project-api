@@ -26,24 +26,26 @@ const db = getFirestore(firebaseApp);
 
 app.use(express.json());
 
-// 驗證 Token 的中間件
-// 修改 Token 驗證邏輯，確保已登出的 Token 不能使用
+const jwt = require('jsonwebtoken');  // 使用 jsonwebtoken 库
+
 function authenticateToken(req, res, next) {
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(" ")[1];
+  const token = authHeader && authHeader.split(" ")[1];  // 取得 Token
 
   if (!token) {
     return res.status(401).json({ message: "未提供身份驗證 Token" });
   }
 
-  try {
-    const decoded = jwt.decode(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    return res.status(403).json({ message: "無效或過期的身份驗證 Token" });
-  }
+  // 使用 jsonwebtoken 的 verify 方法來驗證 Token
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ message: "無效或過期的身份驗證 Token" });
+    }
+    req.user = decoded;  // 解碼後的用戶資料
+    next();  // 繼續處理請求
+  });
 }
+
 
 // 登入 API
 app.post("/login", async (req, res) => {
@@ -67,11 +69,10 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ message: "密碼錯誤" });
     }
 
-    const token = jwt.encode(
+    const token = jwt.sign(
       { id: user.id, user: user.user },
       process.env.JWT_SECRET,
-      'HS256',
-      { expiresIn: "1h" }
+      { algorithm: 'HS256', expiresIn: "1h" }  // 使用 HS256 演算法並設置過期時間
     );
 
     res.status(200).json({

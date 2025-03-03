@@ -1,7 +1,6 @@
 require('dotenv').config();
 const cors = require('cors');
 const express = require('express');
-const jwt = require('jwt-simple');
 const { initializeApp } = require('firebase/app');
 const { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, updateDoc } = require('firebase/firestore');
 

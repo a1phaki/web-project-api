@@ -64,6 +64,9 @@ app.post("/login", async (req, res) => {
 
     const user = querySnapshot.docs[0].data();
     const userId = user.id || querySnapshot.docs[0].id; // 優先使用 user.id，否則用 Firestore doc.id
+
+    console.log("Firestore user data:", user);
+    console.log("Assigned userId:", userId);
     if (user.password !== password) {
       return res.status(401).json({ message: "密碼錯誤" });
     }

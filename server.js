@@ -201,7 +201,7 @@ app.patch("/members/update", authenticateToken, async (req, res) => {
     const memberData = memberDoc.data();  // 提取該會員的資料
 
     // 限制非管理員只能修改自己的資料
-    if (req.user.user !== "admin" && req.user.email !== memberData.email) {
+    if (req.user.user !== "admin" && req.user.id !== memberData.id) {
       return res.status(403).json({ message: "您沒有權限修改此會員資料" });  // 如果非管理員且嘗試修改其他會員資料，返回 403 錯誤
     }
 

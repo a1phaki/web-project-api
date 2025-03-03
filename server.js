@@ -67,17 +67,12 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ message: "密碼錯誤" });
     }
 
-    // 確保 user 內有 id
-    if (!user.id) {
-      return res.status(500).json({ message: "使用者資料錯誤，缺少 ID" });
-    }
-
-
-    const token = jwt.sign(
-      { id: user.id, user: user.user },  // 只存 id，不存 email
+    const token = jwt.encode(
+      { email: user.email, user: user.user },
       process.env.JWT_SECRET,
+      'HS256',
       { expiresIn: "1h" }
-    );    
+    );
 
     res.status(200).json({
       message: "登入成功",

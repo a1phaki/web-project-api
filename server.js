@@ -77,6 +77,8 @@ app.post("/login", async (req, res) => {
       { expiresIn: "1h" }
     );
 
+    console.log(token);
+
     res.status(200).json({
       message: "登入成功",
       token,

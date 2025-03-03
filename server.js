@@ -67,12 +67,11 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ message: "密碼錯誤" });
     }
 
-    const token = jwt.encode(
-      { email: user.email, user: user.user },
+    const token = jwt.sign(
+      { id: user.id, user: user.user },  // 只存 id，不存 email
       process.env.JWT_SECRET,
-      'HS256',
       { expiresIn: "1h" }
-    );
+    );    
 
     res.status(200).json({
       message: "登入成功",

@@ -63,14 +63,14 @@ app.post("/login", async (req, res) => {
     }
 
     const user = querySnapshot.docs[0].data();
+    const userId = user.id || querySnapshot.docs[0].id; // 優先使用 user.id，否則用 Firestore doc.id
     if (user.password !== password) {
       return res.status(401).json({ message: "密碼錯誤" });
     }
 
-    const token = jwt.encode(
-      { email: user.email, user: user.user },
+    const token = jwt.sign(
+      { id: userId, user: user.user },
       process.env.JWT_SECRET,
-      'HS256',
       { expiresIn: "1h" }
     );
 

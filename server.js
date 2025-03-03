@@ -137,7 +137,7 @@ app.get("/login/check", authenticateToken, async (req, res) => {
   try {
     // 假設 req.user 是解碼後的用戶資料，包含 user.email 等
     const membersCol = collection(db, 'members');  // 指定 Firestore 資料集合
-    const q = query(membersCol, where("email", "==", req.user.email));  // 查詢 email 是否與當前用戶匹配
+    const q = query(membersCol, where("id", "==", req.user.id));  // 查詢 email 是否與當前用戶匹配
     const querySnapshot = await getDocs(q);  // 執行查詢
 
     // 如果查詢結果為空，表示找不到用戶資料

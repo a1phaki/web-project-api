@@ -283,7 +283,7 @@ app.get("/appointments", authenticateToken, async (req, res) => {
 
     // 如果是普通用戶，只返回該用戶的預約資料
     if (req.user.user !== "admin") {
-      filteredAppointments = sortedAppointments.filter(appointment => appointment.email === req.user.email);
+      filteredAppointments = sortedAppointments.filter(appointment => appointment.id === req.user.id);
     }
 
     const { paginatedData, pageInfo } = paginate(filteredAppointments, page, limit);
@@ -322,6 +322,7 @@ app.post("/appointments", authenticateToken, async (req, res) => {
 
     const newAppointment = {
       id: 'qt' + Date.now().toString(),
+      memberId: req.user.id,  // 新增會員 ID
       date,
       timeSlot,
       bodyPart,

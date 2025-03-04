@@ -402,17 +402,22 @@ app.patch("/scheduleConfig", authenticateToken, async (req, res) => {
     const scheduleRef = scheduleDoc.ref;
     const schedule = scheduleDoc.data();
 
-    console.log("原始行程配置：", schedule);
 
     // 管理員的操作：可以修改 unavailableTimeSlots 和 lastBookableDate
     if (req.user.user === "admin") {
-      if (unavailableTimeSlots !== undefined) schedule.unavailableTimeSlots = unavailableTimeSlots;
-      if (lastBookableDate !== undefined) schedule.lastBookableDate = lastBookableDate;
+      if (unavailableTimeSlots !== undefined) {
+        // 按日期升序排序（越後面越後面）
+        schedule.unavailableTimeSlots = [...unavailableTimeSlots].sort((a, b) => new Date(a) - new Date(b));
+      }
+      if (lastBookableDate !== undefined) {
+        schedule.lastBookableDate = lastBookableDate;
+      }
     }
     // 一般使用者的操作：只能修改 reservedTimeSlots
     else if (req.user.user === "user") {
       if (reservedTimeSlots !== undefined) {
-        schedule.reservedTimeSlots = reservedTimeSlots;
+        // 按日期降序排序（越後面越前面）
+        schedule.reservedTimeSlots = [...reservedTimeSlots].sort((a, b) => new Date(b.date) - new Date(a.date));
       } else {
         return res.status(400).json({ message: "沒有提供預約時間" });
       }
@@ -432,6 +437,7 @@ app.patch("/scheduleConfig", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });
+
 
 
 app.listen(port, () => {

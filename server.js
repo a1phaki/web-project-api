@@ -2,7 +2,8 @@ require('dotenv').config();
 const cors = require('cors');
 const express = require('express');
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, updateDoc } = require('firebase/firestore');
+const { getFirestore, collection, getDocs, addDoc, query, where, doc, getDoc, updateDoc,deleteDoc } = require('firebase/firestore');
+
 
 
 const app = express();
@@ -162,8 +163,6 @@ app.get("/login/check", authenticateToken, async (req, res) => {
       }
     });
   } catch (err) {
-    // 發生錯誤時返回 500 錯誤
-    console.error("發生錯誤：", err);
     res.status(500).json({ message: "伺服器錯誤", error: err.message });
   }
 });
@@ -235,9 +234,6 @@ app.patch("/members/update", authenticateToken, async (req, res) => {
   }
 });
 
-
-
-
 app.get("/appointments", authenticateToken, async (req, res) => {
   try {
     const { page, limit } = req.query;
@@ -286,23 +282,35 @@ app.get("/appointments", authenticateToken, async (req, res) => {
       filteredAppointments = sortedAppointments.filter(appointment => appointment.userId === req.user.id);
     }
 
-    const { paginatedData, pageInfo } = paginate(filteredAppointments, page, limit);
+    // 查詢會員資料，並將會員資料加入到預約資料中
+    const appointmentsWithUserInfo = await Promise.all(filteredAppointments.map(async (appointment) => {
+      const userColRef = collection(db, "members"); // 取得 members 集合引用
+      const q = query(userColRef, where("id", "==", appointment.userId)); // 查詢條件：userId 等於 appointments 中的 userId
+      const querySnapshot = await getDocs(q); // 執行查詢
+      
+      // 檢查是否找到該會員
+      const userData = querySnapshot.empty ? null : querySnapshot.docs[0].data(); // 取得匹配的會員資料，若未找到則為 null
+    
+      return { ...appointment, user: userData };  // 返回預約資料和會員資料
+    }));
+
+    const { paginatedData, pageInfo } = paginate(appointmentsWithUserInfo, page, limit);
 
     res.json({
       appointments: paginatedData,
       pageInfo,
     });
   } catch (err) {
-    res.status(500).json({ message: "伺服器錯誤", error: err });
+    res.status(500).json({ message: "伺服器錯誤", error: err.message });
   }
 });
 
 
-// POST 預約資料
-app.post("/appointments", authenticateToken, async (req, res) => {
-  const { date, timeSlot, bodyPart, nailRemoval, nailExtension, name, birthday, email, phone, LineID } = req.body;
 
-  if (!date || !timeSlot || !bodyPart || !name || !email || !phone || !LineID || !nailRemoval || !birthday || !nailExtension) {
+app.post("/appointments", authenticateToken, async (req, res) => {
+  const { date, timeSlot, bodyPart, nailRemoval, nailExtension } = req.body;
+
+  if (!date || !timeSlot || !bodyPart || !nailRemoval || !nailExtension) {
     return res.status(400).json({ message: "請提供完整的預約資訊" });
   }
 
@@ -320,19 +328,15 @@ app.post("/appointments", authenticateToken, async (req, res) => {
       return res.status(409).json({ message: "該時段已被預約，請選擇其他時段" });
     }
 
+    // 創建新的預約資料，只存 `userId`，不存會員詳細資料
     const newAppointment = {
       id: 'qt' + Date.now().toString(),
-      userId: req.user.id,  // 新增會員 ID
+      userId: req.user.id,  // 儲存會員 ID
       date,
       timeSlot,
       bodyPart,
       nailRemoval,
       nailExtension,
-      name,
-      birthday,
-      email,
-      phone,
-      LineID,
     };
 
     await addDoc(appointmentCol, newAppointment);
@@ -345,6 +349,112 @@ app.post("/appointments", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });
+
+// PATCH 更新預約資料
+app.patch("/appointments/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;  // 取得預約的 ID
+  const { date, timeSlot, bodyPart, nailRemoval, nailExtension } = req.body;
+
+  // 檢查必須提供的欄位
+  if (!date || !timeSlot || !bodyPart || nailRemoval === undefined || nailExtension === undefined) {
+    return res.status(400).json({ message: "請提供完整的預約資料" });
+  }
+
+  try {
+    const appointmentCol = collection(db, 'appointments');
+    
+    // 根據自定義的 id 欄位查詢
+    const q = query(appointmentCol, where("id", "==", id));  // 根據自定義的 `id` 欄位查詢
+    const querySnapshot = await getDocs(q);
+
+    // 如果找不到該預約，返回錯誤
+    if (querySnapshot.empty) {
+      return res.status(404).json({ message: "找不到該預約" });
+    }
+
+    // 取得第一個匹配的文檔
+    const appointmentDoc = querySnapshot.docs[0];
+    const existingAppointment = appointmentDoc.data();
+
+    // 確認預約擁有者是否是當前使用者（非管理員）
+    if (req.user.user !== "admin" && req.user.id !== existingAppointment.userId) {
+      return res.status(403).json({ message: "無權限更改此預約" });
+    }
+
+    // 查詢所有預約資料，並檢查是否有其他預約與新的日期和時間衝突
+    const allAppointmentsSnapshot = await getDocs(appointmentCol);
+    const conflictingAppointment = allAppointmentsSnapshot.docs.some(doc => {
+      const appointment = doc.data();
+      return appointment.id !== id && appointment.date === date && appointment.timeSlot === timeSlot;
+    });
+
+    if (conflictingAppointment) {
+      return res.status(409).json({ message: "該時段已被預約，請選擇其他時段" });
+    }
+
+    // 使用 Firestore 文檔 ID 進行更新
+    const docRef = doc(appointmentCol, appointmentDoc.id); // 使用查詢到的文檔 ID
+    await updateDoc(docRef, {
+      date,
+      timeSlot,
+      bodyPart,
+      nailRemoval,
+      nailExtension
+    });
+
+    // 回傳更新後的預約資料
+    res.status(200).json({
+      message: "預約更新成功",
+      appointment: {
+        id,
+        userId: existingAppointment.userId,
+        date,
+        timeSlot,
+        bodyPart,
+        nailRemoval,
+        nailExtension
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: "伺服器錯誤", error: err });
+  }
+});
+
+
+app.delete("/appointments/:id", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;  // 取得自定義的預約 ID
+
+    const appointmentCol = collection(db, 'appointments');  // 取得 appointments 集合
+    
+    // 根據自定義的 id 欄位查詢
+    const q = query(appointmentCol, where("id", "==", id));  // 查詢符合自定義 id 的預約
+    const querySnapshot = await getDocs(q);
+
+    // 如果找不到對應的預約，返回 404
+    if (querySnapshot.empty) {
+      return res.status(404).json({ message: "預約不存在" });
+    }
+
+    // 取得第一筆符合的預約文件
+    const appointmentDoc = querySnapshot.docs[0];
+
+    // 檢查權限：非管理員只能刪除自己的預約
+    if (req.user.user !== "admin" && appointmentDoc.data().userId !== req.user.id) {
+      return res.status(403).json({ message: "沒有權限刪除此預約" });
+    }
+
+    // 刪除該筆預約
+    await deleteDoc(appointmentDoc.ref);
+    res.json({ message: "預約刪除成功" });
+
+  } catch (err) {
+    res.status(500).json({ message: "伺服器錯誤", error: err });
+  }
+});
+
+
+
 
 // 受保護的 API - 會員資料
 app.get("/members", authenticateToken, async (req, res) => {
@@ -433,7 +543,6 @@ app.patch("/scheduleConfig", authenticateToken, async (req, res) => {
       schedule,
     });
   } catch (err) {
-    console.error("更新行程配置時發生錯誤：", err);
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });

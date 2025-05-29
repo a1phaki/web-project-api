@@ -352,48 +352,68 @@ app.post("/appointments", authenticateToken, async (req, res) => {
 
 // PATCH 更新預約資料
 app.patch("/appointments/:id", authenticateToken, async (req, res) => {
-  const { id } = req.params;  // 取得預約的 ID
+  const { id } = req.params;
   const { date, timeSlot, bodyPart, nailRemoval, nailExtension } = req.body;
 
-  // 檢查必須提供的欄位
   if (!date || !timeSlot || !bodyPart || nailRemoval === undefined || nailExtension === undefined) {
     return res.status(400).json({ message: "請提供完整的預約資料" });
   }
 
   try {
     const appointmentCol = collection(db, 'appointments');
-    
-    // 根據自定義的 id 欄位查詢
-    const q = query(appointmentCol, where("id", "==", id));  // 根據自定義的 `id` 欄位查詢
+    const q = query(appointmentCol, where("id", "==", id));
     const querySnapshot = await getDocs(q);
 
-    // 如果找不到該預約，返回錯誤
     if (querySnapshot.empty) {
       return res.status(404).json({ message: "找不到該預約" });
     }
 
-    // 取得第一個匹配的文檔
     const appointmentDoc = querySnapshot.docs[0];
     const existingAppointment = appointmentDoc.data();
 
-    // 確認預約擁有者是否是當前使用者（非管理員）
     if (req.user.user !== "admin" && req.user.id !== existingAppointment.userId) {
       return res.status(403).json({ message: "無權限更改此預約" });
     }
 
-    // 查詢所有預約資料，並檢查是否有其他預約與新的日期和時間衝突
+    // 檢查是否衝突
     const allAppointmentsSnapshot = await getDocs(appointmentCol);
     const conflictingAppointment = allAppointmentsSnapshot.docs.some(doc => {
-      const appointment = doc.data();
-      return appointment.id !== id && appointment.date === date && appointment.timeSlot === timeSlot;
+      const a = doc.data();
+      return a.id !== id && a.date === date && a.timeSlot === timeSlot;
     });
 
     if (conflictingAppointment) {
       return res.status(409).json({ message: "該時段已被預約，請選擇其他時段" });
     }
 
-    // 使用 Firestore 文檔 ID 進行更新
-    const docRef = doc(appointmentCol, appointmentDoc.id); // 使用查詢到的文檔 ID
+    // ========================
+    // 🔧 更新 scheduleConfig reservedTimeSlots
+    // ========================
+    const scheduleConfigCol = collection(db, "scheduleConfig");
+    const scheduleSnapshot = await getDocs(scheduleConfigCol);
+
+    if (!scheduleSnapshot.empty) {
+      const scheduleDoc = scheduleSnapshot.docs[0];
+      const scheduleRef = scheduleDoc.ref;
+      const configData = scheduleDoc.data();
+      const reservedTimeSlots = configData.reservedTimeSlots || [];
+
+      // 1. 移除舊的時段
+      const filteredSlots = reservedTimeSlots.filter(slot =>
+        !(slot.date === existingAppointment.date && slot.timeSlot === existingAppointment.timeSlot)
+      );
+
+      // 2. 加上新的時段
+      filteredSlots.push({ date, timeSlot });
+
+      // 3. 寫回資料庫
+      await updateDoc(scheduleRef, {
+        reservedTimeSlots: filteredSlots
+      });
+    }
+
+    // 更新 appointment 資料
+    const docRef = doc(appointmentCol, appointmentDoc.id);
     await updateDoc(docRef, {
       date,
       timeSlot,
@@ -402,33 +422,6 @@ app.patch("/appointments/:id", authenticateToken, async (req, res) => {
       nailExtension
     });
 
-    const scheduleConfigDocRef = doc(db, "scheduleConfig", "1d07"); // 改成你的ID
-    const scheduleConfigDoc = await getDoc(scheduleConfigDocRef);
-
-    if (scheduleConfigDoc.exists()) {
-      const scheduleData = scheduleConfigDoc.data();
-      let reservedTimeSlots = scheduleData.reservedTimeSlots || [];
-
-      // 4. 移除舊預約時間
-      reservedTimeSlots = reservedTimeSlots.filter(slot => {
-        return !(slot.date === oldData.date && slot.timeSlot === oldData.timeSlot);
-      });
-
-      // 5. 新增新預約時間（避免重複加入）
-      const isAlreadyReserved = reservedTimeSlots.some(slot => 
-        slot.date === newDate && slot.timeSlot === newTimeSlot
-      );
-      if (!isAlreadyReserved) {
-        reservedTimeSlots.push({ date: newDate, timeSlot: newTimeSlot });
-      }
-
-      // 6. 更新 Firestore
-      await updateDoc(scheduleConfigDocRef, {
-        reservedTimeSlots: reservedTimeSlots
-      });
-    }
-
-    // 回傳更新後的預約資料
     res.status(200).json({
       message: "預約更新成功",
       appointment: {
@@ -442,61 +435,63 @@ app.patch("/appointments/:id", authenticateToken, async (req, res) => {
       }
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });
+
 
 
 app.delete("/appointments/:id", authenticateToken, async (req, res) => {
   try {
-    const { id } = req.params;  // 取得自定義的預約 ID
+    const { id } = req.params;
 
-    const appointmentCol = collection(db, 'appointments');  // 取得 appointments 集合
-    
-    // 根據自定義的 id 欄位查詢
-    const q = query(appointmentCol, where("id", "==", id));  // 查詢符合自定義 id 的預約
+    const appointmentCol = collection(db, 'appointments');
+    const q = query(appointmentCol, where("id", "==", id));
     const querySnapshot = await getDocs(q);
 
-    // 如果找不到對應的預約，返回 404
     if (querySnapshot.empty) {
       return res.status(404).json({ message: "預約不存在" });
     }
 
-    // 取得第一筆符合的預約文件
     const appointmentDoc = querySnapshot.docs[0];
+    const appointmentData = appointmentDoc.data();
 
-    // 檢查權限：非管理員只能刪除自己的預約
-    if (req.user.user !== "admin" && appointmentDoc.data().userId !== req.user.id) {
+    // 權限檢查
+    if (req.user.user !== "admin" && appointmentData.userId !== req.user.id) {
       return res.status(403).json({ message: "沒有權限刪除此預約" });
+    }
+
+    // 刪除預約前，先從 scheduleConfig 移除 reservedTimeSlot
+    const scheduleConfigCol = collection(db, "scheduleConfig");
+    const scheduleSnapshot = await getDocs(scheduleConfigCol);
+
+    if (!scheduleSnapshot.empty) {
+      const scheduleDoc = scheduleSnapshot.docs[0];
+      const scheduleDocRef = scheduleDoc.ref;
+      const scheduleData = scheduleDoc.data();
+      const reservedTimeSlots = scheduleData.reservedTimeSlots || [];
+
+      // 移除該預約對應的時間
+      const updatedSlots = reservedTimeSlots.filter(slot =>
+        !(slot.date === appointmentData.date && slot.timeSlot === appointmentData.timeSlot)
+      );
+
+      await updateDoc(scheduleDocRef, {
+        reservedTimeSlots: updatedSlots
+      });
     }
 
     // 刪除該筆預約
     await deleteDoc(appointmentDoc.ref);
-    // 更新 scheduleConfig 裡的 reservedTimeSlots
-    const scheduleConfigDocRef = doc(db, "scheduleConfig", "1d07"); // 你這裡改成你的 scheduleConfig 文件ID
-    const scheduleConfigDoc = await getDoc(scheduleConfigDocRef);
 
-    if (scheduleConfigDoc.exists()) {
-      const scheduleData = scheduleConfigDoc.data();
-      const reservedTimeSlots = scheduleData.reservedTimeSlots || [];
-
-      // 過濾掉要刪除的預約時間
-      const updatedReservedTimeSlots = reservedTimeSlots.filter(slot => {
-        return !(slot.date === appointmentData.date && slot.timeSlot === appointmentData.timeSlot);
-      });
-
-      // 更新 Firestore 文件
-      await updateDoc(scheduleConfigDocRef, {
-        reservedTimeSlots: updatedReservedTimeSlots
-      });
-    }
-    
     res.json({ message: "預約刪除成功" });
-
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "伺服器錯誤", error: err });
   }
 });
+
 
 
 

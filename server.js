@@ -402,6 +402,32 @@ app.patch("/appointments/:id", authenticateToken, async (req, res) => {
       nailExtension
     });
 
+    const scheduleConfigDocRef = doc(db, "scheduleConfig", "1d07"); // 改成你的ID
+    const scheduleConfigDoc = await getDoc(scheduleConfigDocRef);
+
+    if (scheduleConfigDoc.exists()) {
+      const scheduleData = scheduleConfigDoc.data();
+      let reservedTimeSlots = scheduleData.reservedTimeSlots || [];
+
+      // 4. 移除舊預約時間
+      reservedTimeSlots = reservedTimeSlots.filter(slot => {
+        return !(slot.date === oldData.date && slot.timeSlot === oldData.timeSlot);
+      });
+
+      // 5. 新增新預約時間（避免重複加入）
+      const isAlreadyReserved = reservedTimeSlots.some(slot => 
+        slot.date === newDate && slot.timeSlot === newTimeSlot
+      );
+      if (!isAlreadyReserved) {
+        reservedTimeSlots.push({ date: newDate, timeSlot: newTimeSlot });
+      }
+
+      // 6. 更新 Firestore
+      await updateDoc(scheduleConfigDocRef, {
+        reservedTimeSlots: reservedTimeSlots
+      });
+    }
+
     // 回傳更新後的預約資料
     res.status(200).json({
       message: "預約更新成功",
@@ -446,6 +472,25 @@ app.delete("/appointments/:id", authenticateToken, async (req, res) => {
 
     // 刪除該筆預約
     await deleteDoc(appointmentDoc.ref);
+    // 更新 scheduleConfig 裡的 reservedTimeSlots
+    const scheduleConfigDocRef = doc(db, "scheduleConfig", "1d07"); // 你這裡改成你的 scheduleConfig 文件ID
+    const scheduleConfigDoc = await getDoc(scheduleConfigDocRef);
+
+    if (scheduleConfigDoc.exists()) {
+      const scheduleData = scheduleConfigDoc.data();
+      const reservedTimeSlots = scheduleData.reservedTimeSlots || [];
+
+      // 過濾掉要刪除的預約時間
+      const updatedReservedTimeSlots = reservedTimeSlots.filter(slot => {
+        return !(slot.date === appointmentData.date && slot.timeSlot === appointmentData.timeSlot);
+      });
+
+      // 更新 Firestore 文件
+      await updateDoc(scheduleConfigDocRef, {
+        reservedTimeSlots: updatedReservedTimeSlots
+      });
+    }
+    
     res.json({ message: "預約刪除成功" });
 
   } catch (err) {

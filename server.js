@@ -379,7 +379,7 @@ app.patch("/appointments/:id", authenticateToken, async (req, res) => {
     const allAppointmentsSnapshot = await getDocs(appointmentCol);
     const conflictingAppointment = allAppointmentsSnapshot.docs.some(doc => {
       const a = doc.data();
-      return a.id !== id && a.date === date && a.timeSlot === timeSlot;
+      return a.id !== id && a.date == date && a.timeSlot == timeSlot;
     });
 
     if (conflictingAppointment) {

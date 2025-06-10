@@ -402,10 +402,9 @@ app.patch("/appointments/:id", authenticateToken, async (req, res) => {
       const filteredSlots = reservedTimeSlots.filter(slot =>
         !(slot.date == existingAppointment.date && slot.timeSlot == existingAppointment.timeSlot)
       );
-      console.log("移除舊的預約時段:", filteredSlots);
+      
       // 2. 加上新的時段
       filteredSlots.push({ date, timeSlot });
-      console.log("更新後的預約時段:", filteredSlots);
 
       // 3. 寫回資料庫
       await updateDoc(scheduleRef, {

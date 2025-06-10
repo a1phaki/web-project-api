@@ -400,7 +400,7 @@ app.patch("/appointments/:id", authenticateToken, async (req, res) => {
 
       // 1. 移除舊的時段
       const filteredSlots = reservedTimeSlots.filter(slot =>
-        !(slot.date === existingAppointment.date && slot.timeSlot === existingAppointment.timeSlot)
+        !(slot.date == existingAppointment.date && slot.timeSlot == existingAppointment.timeSlot)
       );
 
       // 2. 加上新的時段
